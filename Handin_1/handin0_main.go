@@ -205,4 +205,6 @@ func main() {
 	//sleep to let the network do it's thing before terminating
 	time.Sleep(3 * time.Second)
 
+	//SUp dawg
+
 }
