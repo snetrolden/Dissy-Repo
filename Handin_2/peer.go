@@ -15,6 +15,7 @@ type Peer struct {
 	port       int                 // Its own port
 	peers      map[string]net.Conn // list over connected peers
 	knownPeers map[string]bool     // Address book for known peers
+	seenMsgs   map[string]bool     // list of uniquely seen msgIDs to prevent broadcast storm
 	lock       sync.Mutex          // thread safety
 
 }
@@ -30,8 +31,9 @@ type Message struct {
 func newPeer(listenPort int) *Peer {
 
 	return &Peer{
-		port:  listenPort,
-		peers: make(map[string]net.Conn),
+		port:     listenPort,
+		peers:    make(map[string]net.Conn),
+		seenMsgs: make(map[string]bool),
 	}
 }
 
@@ -57,7 +59,7 @@ func (p *Peer) Start() error {
 			continue
 		}
 		//lets us know who the conneciton has been made with
-		fmt.Println(p.port, "Got a connection from", conn.RemoteAddr().String())
+		fmt.Println(p.port, "Got a connection from", conn.RemoteAddr().String()) //fake ass port
 		// using goroutines each connection is handled by its own process
 		go p.handleConnection(conn)
 
@@ -90,13 +92,14 @@ func (p *Peer) Connect(addr string, port int) error {
 }
 
 // Called when a message is received
-func (p *Peer) OnMessage(from string, msg *Message) {
+func (p *Peer) OnMessage(msg *Message) {
 	//use switch for the type of message recieved 'Ping' and 'Pong'
 
 	fmt.Println(p.port, "Recieve", msg.Type, "from", msg.From, "ID :", msg.MsgID)
 
-	//Case: if ping then pong
-	if msg.Type == "Ping" {
+	switch msg.Type {
+
+	case "Ping":
 		reply := &Message{
 			Type:  "Pong",
 			MsgID: msg.MsgID,
@@ -104,11 +107,22 @@ func (p *Peer) OnMessage(from string, msg *Message) {
 		}
 
 		p.Send(msg.From, reply)
-	}
 
-	if msg.Type == "Addr Book" {
-		var connectedPeers map[string]bool
-		json.Unmarshal(msg.Payload, &connectedPeers) //Unmarshal the []byte into the map
+		//Case for dynamically growing Peer network
+	case "Join":
+		var newPeers map[string]bool
+		json.Unmarshal(msg.Payload, &newPeers) //Unmarshal the []byte into the map
+
+		for addr := range newPeers {
+			_, connected := newPeers[addr]                           //already known connections
+			isConnected := addr == "127.0.0.1:"+strconv.Itoa(p.port) // self
+
+			if !connected && !isConnected {
+				host, portString, _ := net.SplitHostPort(addr) // splits at %:%
+				port, _ := strconv.Atoi(portString)            // string to int
+				p.Connect(host, port)
+			}
+		}
 
 	}
 
@@ -134,7 +148,7 @@ func (p *Peer) handleConnection(conn net.Conn) {
 		var msg Message
 		json.Unmarshal(msgBuffer, &msg)
 
-		p.OnMessage(conn.RemoteAddr().String(), &msg)
+		p.OnMessage(&msg)
 	}
 
 }
