@@ -8,19 +8,19 @@ import (
 	"net"             //API for handling network related queries
 	"strconv"         //Converting thingies to strings
 	"sync"            //Mutex
-	// used for time out in main
 )
 
 // Our peer structure
 type Peer struct {
-	port  int                 // Its own port
-	peers map[string]net.Conn // list over connected peers
-	lock  sync.Mutex          // thread safety
+	port       int                 // Its own port
+	peers      map[string]net.Conn // list over connected peers
+	knownPeers map[string]bool     // Address book for known peers
+	lock       sync.Mutex          // thread safety
 
 }
 
 type Message struct {
-	Type    string // ID for outgoing or recieving message
+	Type    string // ID for what messages purpose is, used in 'onMessage'
 	MsgID   string // identifier
 	From    string // sender
 	Payload []byte // Actual message
@@ -77,6 +77,7 @@ func (p *Peer) Connect(addr string, port int) error {
 	// Lock when modifying data in Peer to prevent crash
 	p.lock.Lock()
 	p.peers[fullAddr] = conn
+	p.knownPeers[fullAddr] = true
 	p.lock.Unlock()
 
 	fmt.Println(p.port, "Connected to", fullAddr)
@@ -88,7 +89,7 @@ func (p *Peer) Connect(addr string, port int) error {
 	return nil
 }
 
-// Called when a message is recieved
+// Called when a message is received
 func (p *Peer) OnMessage(from string, msg *Message) {
 	//use switch for the type of message recieved 'Ping' and 'Pong'
 
@@ -105,11 +106,18 @@ func (p *Peer) OnMessage(from string, msg *Message) {
 		p.Send(msg.From, reply)
 	}
 
+	if msg.Type == "Addr Book" {
+		var connectedPeers map[string]bool
+		json.Unmarshal(msg.Payload, &connectedPeers) //Unmarshal the []byte into the map
+
+	}
+
 }
 
 // The goroutine handling the connection between peers
 func (p *Peer) handleConnection(conn net.Conn) {
 	defer conn.Close()
+
 	//loop
 	for {
 		lenghtBuffer := make([]byte, 4)
