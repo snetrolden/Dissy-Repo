@@ -85,7 +85,7 @@ func (p *Peer) Connect(addr string, port int) error {
 	p.knownPeers[fullAddr] = true
 	p.lock.Unlock()
 
-	fmt.Println(p.port, "Connected to", fullAddr)
+	// fmt.Println(p.port, "Connected to", fullAddr)
 
 	//put the connection on a goroutine
 	go p.handleConnection(conn)
@@ -107,7 +107,7 @@ func (p *Peer) OnMessage(msg *Message) {
 	p.seenMsgs[msg.MsgID] = true
 	p.lock.Unlock()
 
-	fmt.Println(p.port, "Recieve", msg.Type, "from", msg.From, "ID :", msg.MsgID) //Print after deduplicating
+	// fmt.Println(p.port, "Recieve", msg.Type, "from", msg.From, "ID :", msg.MsgID) //Print after deduplicating
 
 	switch msg.Type {
 
@@ -136,7 +136,7 @@ func (p *Peer) OnMessage(msg *Message) {
 		//add check for already seen messages, avoid duplicate transactions?
 
 		p.ledger.Transaction(&tx)
-		fmt.Println("Transaction complete", tx.From, "--->", tx.To, "in the amount:", tx.Amount)
+		// fmt.Println("Transaction complete", tx.From, "--->", tx.To, "in the amount:", tx.Amount)
 
 		p.FloodMessage(msg)
 
@@ -277,8 +277,33 @@ func (p *Peer) FloodMessage(msg *Message) {
 // Used when making a transaction insteadof anually sending a "Transaction" message via send
 func (p *Peer) FloodTransaction(tx *Transaction) {
 
+	payload, err := json.Marshal(tx)
+	if err != nil {
+		fmt.Println("FloodTransaction Marshalling failed: ", err)
+		return
+	}
+
+	msg := &Message{
+		Type:    "Transaction",
+		MsgID:   tx.ID,
+		From:    "127.0.0.1:" + strconv.Itoa(p.port),
+		Payload: payload,
+	}
+
+	//prevent looping back
+	p.lock.Lock()
+	p.seenMsgs[msg.MsgID] = true
+	p.lock.Unlock()
+
+	p.ledger.Transaction(tx)
+
+	//Consider adding print statement?
+
+	p.FloodMessage(msg)
+
 }
 
+// Helper function to get the list of known peers from specified peer
 func (p *Peer) getPeerList(addr string) {
 
 	reqMsg := &Message{
