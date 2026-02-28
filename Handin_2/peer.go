@@ -5,9 +5,10 @@ import (
 	"encoding/json"   //marshal and unmarshaling
 	"fmt"             //input/output API
 	"io"              //handles reading of messages
-	"net"             //API for handling network related queries
-	"strconv"         //Converting thingies to strings
-	"sync"            //Mutex
+	"maps"
+	"net"     //API for handling network related queries
+	"strconv" //Converting thingies to strings
+	"sync"    //Mutex
 )
 
 // Our peer structure
@@ -17,7 +18,7 @@ type Peer struct {
 	knownPeers map[string]bool     // Address book for known peers
 	seenMsgs   map[string]bool     // list of uniquely seen msgIDs to prevent broadcast storm
 	lock       sync.Mutex          // thread safety
-
+	ledger     *Ledger
 }
 
 type Message struct {
@@ -31,9 +32,11 @@ type Message struct {
 func newPeer(listenPort int) *Peer {
 
 	return &Peer{
-		port:     listenPort,
-		peers:    make(map[string]net.Conn),
-		seenMsgs: make(map[string]bool),
+		port:       listenPort,
+		peers:      make(map[string]net.Conn),
+		knownPeers: make(map[string]bool),
+		seenMsgs:   make(map[string]bool),
+		ledger:     MakeLedger(),
 	}
 }
 
@@ -59,7 +62,7 @@ func (p *Peer) Start() error {
 			continue
 		}
 		//lets us know who the conneciton has been made with
-		fmt.Println(p.port, "Got a connection from", conn.RemoteAddr().String()) //fake ass port
+		//fmt.Println(p.port, "Got a connection from", conn.RemoteAddr().String()) //fake ass port
 		// using goroutines each connection is handled by its own process
 		go p.handleConnection(conn)
 
@@ -86,6 +89,7 @@ func (p *Peer) Connect(addr string, port int) error {
 
 	//put the connection on a goroutine
 	go p.handleConnection(conn)
+	p.getPeerList(fullAddr)
 
 	//satisfy annoying return
 	return nil
@@ -96,6 +100,15 @@ func (p *Peer) OnMessage(msg *Message) {
 	//use switch for the type of message recieved 'Ping' and 'Pong'
 
 	fmt.Println(p.port, "Recieve", msg.Type, "from", msg.From, "ID :", msg.MsgID)
+
+	p.lock.Lock()
+	if p.seenMsgs[msg.MsgID] {
+		p.lock.Unlock()
+		return
+
+	}
+	p.seenMsgs[msg.MsgID] = true
+	p.lock.Unlock()
 
 	switch msg.Type {
 
@@ -110,19 +123,79 @@ func (p *Peer) OnMessage(msg *Message) {
 
 		//Case for dynamically growing Peer network
 	case "Join":
-		var newPeers map[string]bool
-		json.Unmarshal(msg.Payload, &newPeers) //Unmarshal the []byte into the map
 
+		p.lock.Lock()
+		p.knownPeers[msg.From] = true
+		p.lock.Unlock()
+
+		p.FloodMessage(msg)
+
+	case "Transaction":
+		var tx Transaction
+		json.Unmarshal(msg.Payload, &tx)
+
+		//add check for already seen messages, avoid duplicate transactions?
+
+		p.ledger.Transaction(&tx)
+		fmt.Println("Transaction complete", tx.From, "--->", tx.To, "in the amount:", tx.Amount)
+
+		p.FloodMessage(msg)
+
+	case "GetPeers":
+
+		//check for reverse connection
+		p.lock.Lock()
+		_, connected := p.peers[msg.From]
+		p.lock.Unlock()
+
+		if !connected {
+			host, portString, _ := net.SplitHostPort(msg.From)
+			port, _ := strconv.Atoi(portString)
+			p.Connect(host, port)
+		}
+
+		//safely copy map
+		p.lock.Lock()
+		known := make(map[string]bool)
+		maps.Copy(known, p.knownPeers)
+		p.lock.Unlock()
+
+		payload, _ := json.Marshal(known)
+
+		reply := &Message{
+			Type:    "PeerList",
+			MsgID:   "list" + msg.From + "-" + strconv.Itoa(p.port),
+			From:    "127.0.0.1:" + strconv.Itoa(p.port),
+			Payload: payload,
+		}
+		p.Send(msg.From, reply) // Send it straight back!
+
+	case "PeerList":
+		var newPeers map[string]bool
+		json.Unmarshal(msg.Payload, &newPeers)
+
+		//Connect to all new peers (Consider code duplication in Case for "Join")
 		for addr := range newPeers {
-			_, connected := newPeers[addr]                           //already known connections
-			isConnected := addr == "127.0.0.1:"+strconv.Itoa(p.port) // self
+			p.lock.Lock()
+			_, connected := p.peers[addr]
+			p.lock.Unlock()
+
+			isConnected := addr == "127.0.0.1:"+strconv.Itoa(p.port)
 
 			if !connected && !isConnected {
-				host, portString, _ := net.SplitHostPort(addr) // splits at %:%
-				port, _ := strconv.Atoi(portString)            // string to int
+				host, portString, _ := net.SplitHostPort(addr)
+				port, _ := strconv.Atoi(portString)
 				p.Connect(host, port)
 			}
 		}
+
+		//Flood the list and let them join
+		joinMsg := &Message{
+			Type:  "Join",
+			MsgID: "join-" + strconv.Itoa(p.port),
+			From:  "127.0.0.1:" + strconv.Itoa(p.port),
+		}
+		p.FloodMessage(joinMsg)
 
 	}
 
@@ -155,15 +228,14 @@ func (p *Peer) handleConnection(conn net.Conn) {
 
 // Helper function for sending a message
 func (p *Peer) Send(to string, msg *Message) error {
+
 	//Find peer in maps
-	//remember to lock when interacting with Peer
 	p.lock.Lock()
 	conn, ok := p.peers[to]
 	p.lock.Unlock()
-
 	//error handling
 	if !ok {
-		return fmt.Errorf("Peer not found : %v", to) // return needs type error so Println is kaput
+		return fmt.Errorf("Peer not found : %v", to)
 	}
 
 	//marshal
@@ -175,10 +247,46 @@ func (p *Peer) Send(to string, msg *Message) error {
 	//get lenght for prefixing data
 	lenght := uint32(len(data)) //we use 32 for consistency, people in RC(RegneCentralen) recommended it
 
-	//Convert the prefix, and send it before sending the data.
+	p.lock.Lock()
 	binary.Write(conn, binary.BigEndian, lenght) // I read that BigEndian is the default?
 	conn.Write(data)                             //Consider catching errors and protect the write with locks? (ask TA)
+	p.lock.Unlock()
 
 	return nil
+
+}
+
+// Disseminates messages to all peers
+func (p *Peer) FloodMessage(msg *Message) {
+
+	// Send to neighbors
+	p.lock.Lock()
+	peers := make([]string, 0, len(p.peers))
+	for addr := range p.peers {
+		if addr != msg.From {
+			peers = append(peers, addr)
+		}
+	}
+	p.lock.Unlock()
+
+	for _, addr := range peers {
+		p.Send(addr, msg)
+	}
+
+}
+
+// Used when making a transaction insteadof anually sending a "Transaction" message via send
+func (p *Peer) FloodTransaction(tx *Transaction) {
+
+}
+
+func (p *Peer) getPeerList(addr string) {
+
+	reqMsg := &Message{
+		Type:  "GetPeers",
+		MsgID: "req-" + strconv.Itoa(p.port) + "-" + addr,
+		From:  "127.0.0.1:" + strconv.Itoa(p.port),
+	}
+	p.Send(addr, reqMsg)
 
 }

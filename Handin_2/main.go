@@ -18,15 +18,11 @@ func main() {
 
 	// p1 and p2 P2P established
 	p1.Connect("127.0.0.1", 3001) //localhost IP
-	p2.Connect("127.0.0.1", 3000) //uses same IP but different port
-
-	//p1 and p3 P2P established
-	p1.Connect("127.0.0.1", 3002)
-	p3.Connect("127.0.0.1", 3000)
+	time.Sleep(1 * time.Second)
 
 	//p2 and p3 P2P established
 	p2.Connect("127.0.0.1", 3002)
-	p3.Connect("127.0.0.1", 3001)
+	time.Sleep(1 * time.Second)
 
 	testMsg1 := &Message{
 		Type:  "Ping",
@@ -43,7 +39,7 @@ func main() {
 	// P1 -> P2
 	p1.Send("127.0.0.1:3001", testMsg1)
 	// P3 -> P1
-	p3.Send("127.0.0.1:3000", testMsg2)
+	p3.Send("127.0.0.1:3001", testMsg2)
 
 	//sleep to let the network do it's thing before terminating
 	time.Sleep(3 * time.Second)
