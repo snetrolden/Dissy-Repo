@@ -98,9 +98,6 @@ func (p *Peer) Connect(addr string, port int) error {
 // Called when a message is received
 func (p *Peer) OnMessage(msg *Message) {
 	//use switch for the type of message recieved 'Ping' and 'Pong'
-
-	fmt.Println(p.port, "Recieve", msg.Type, "from", msg.From, "ID :", msg.MsgID)
-
 	p.lock.Lock()
 	if p.seenMsgs[msg.MsgID] {
 		p.lock.Unlock()
@@ -109,6 +106,8 @@ func (p *Peer) OnMessage(msg *Message) {
 	}
 	p.seenMsgs[msg.MsgID] = true
 	p.lock.Unlock()
+
+	fmt.Println(p.port, "Recieve", msg.Type, "from", msg.From, "ID :", msg.MsgID) //Print after deduplicating
 
 	switch msg.Type {
 
@@ -164,7 +163,7 @@ func (p *Peer) OnMessage(msg *Message) {
 
 		reply := &Message{
 			Type:    "PeerList",
-			MsgID:   "list" + msg.From + "-" + strconv.Itoa(p.port),
+			MsgID:   "list-" + msg.From + "-" + strconv.Itoa(p.port),
 			From:    "127.0.0.1:" + strconv.Itoa(p.port),
 			Payload: payload,
 		}
