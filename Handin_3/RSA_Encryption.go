@@ -60,13 +60,12 @@ func KeyGen(k int) (n, e, d *big.Int, err error) {
 			// get d
 			d := new(big.Int).ModInverse(e, phi)
 			if d != nil {
-				break
+				return n, e, d, nil
 			}
 		}
 
 	}
 	// return key pair
-	return n, e, d, nil
 }
 
 func Encrypt(m, e, n *big.Int) *big.Int {
