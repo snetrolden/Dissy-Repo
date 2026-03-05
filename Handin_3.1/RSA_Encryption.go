@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"math/big"
 )
@@ -75,4 +76,40 @@ func Encrypt(m, e, n *big.Int) *big.Int {
 func Decrypt(c, d, n *big.Int) *big.Int {
 	return new(big.Int).Exp(c, d, n)
 
+}
+
+//---- RSA Signatures ----
+
+func RSASign(message []byte, d, n *big.Int) *big.Int {
+	//hashing
+	hash := sha256.New()
+	_, err := hash.Write(message)
+	if err != nil {
+		panic(err)
+	}
+	hashInBytes := hash.Sum(nil)
+
+	//Convert hash to integer (ignoring padding)
+	hashInt := new(big.Int).SetBytes(hashInBytes)
+
+	// signature = hash^d mod n
+	signature := new(big.Int).Exp(hashInt, d, n)
+	return signature
+}
+
+func RSAVerify(message []byte, signature, e, n *big.Int) bool {
+	//Hash the local message
+	hash := sha256.New()
+	_, err := hash.Write(message)
+	if err != nil {
+		panic(err)
+	}
+	hashInBytes := hash.Sum(nil)
+	expectedHashInt := new(big.Int).SetBytes(hashInBytes)
+
+	// decrypt hash = signature^e mod n
+	actualHashInt := new(big.Int).Exp(signature, e, n)
+
+	//Comparez
+	return expectedHashInt.Cmp(actualHashInt) == 0
 }
