@@ -90,6 +90,7 @@ func Sign(filename string, password string, msg []byte) string {
 	ciphertext := data[32:] //evyerhitng after the 32 bits
 
 	//unmarshall the sketchy RSA keys
+	aes := MasterHasher(password, salt)
 
 	//hjælp kan ikke finde ud af at push
 
