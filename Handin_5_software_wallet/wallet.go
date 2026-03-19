@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"os"
 )
 
 type SecretKey struct {
@@ -68,11 +69,24 @@ func Generate(filename string, password string) string {
 
 	// Save to a file (os.WriteFile) remember to use the FileName given in the method
 	// MISSING
+	saveFile := append(salt, append(iv, ciphertext...)...)
 
+	err = os.WriteFile(filename, saveFile, 0600)
 	//Return public key N E
 	return fmt.Sprint("Modulo N: ", n.String(), "\n Public key E: ", e.String())
 }
 
 func Sign(filename string, password string, msg []byte) string {
+	//read the bytes from the file
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		panic("Cant read file")
+	}
+	//something probably should happen here but i me not know how
+
+	//unmarshall the sketchy RSA keys
+
+	//hjælp kan ikke finde ud af at push
+
 	return "Signature"
 }
