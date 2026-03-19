@@ -1,23 +1,33 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"math/big"
 )
 
 type SecretKey struct {
-	D *big.Int
-	N *big.Int
+	D []byte
+	N []byte
 }
 
-func MasterHasher(password string) []byte {
-	beenHashed := []byte(password)
+// Helper function for hashing the password, prevent/slow bruteforce
+func MasterHasher(password string, salt []byte) []byte {
+
+	hash := sha256.New()
+	hash.Write([]byte(password))
+	hash.Write(salt)
+	bs := hash.Sum(nil)
+
+	// repeat hash the password + salt
 	for i := 0; i < 100000; i++ {
-		hash := sha256.Sum256(beenHashed)
+		hash := sha256.New()
+		hash.Write(bs)
+		bs = hash.Sum(nil)
 	}
-	return beenHashed
+
+	return bs
 }
 
 func Generate(filename string, password string) string {
@@ -28,24 +38,38 @@ func Generate(filename string, password string) string {
 		panic(fmt.Sprint("Error: ", err))
 	}
 
+	// struct to keep the secret key together
 	private := SecretKey{
 		D: d.Bytes(),
 		N: n.Bytes(),
 	}
 
+	// Marshal the struct into data, for easier handling
 	plaintext, err := json.Marshal(private)
 	if err != nil {
 		panic(fmt.Sprint("Marshal error: ", err))
 	}
 
-	//make a salt for protection against dictionary attacks, prevents effective guessing
-
+	//make a salt and hash for protection against dictionary attacks, prevents effective guessing
 	//hash like there is no tomorrow for protect against brute fuckers
+	salt := make([]byte, 16)
+	_, err = rand.Read(salt)
+	if err != nil {
+		panic("Can't make salt number")
+	}
+
+	aes := MasterHasher(password, salt)
 
 	//Encrypt using AES (blockcipher)
+	iv, ciphertext, err := EncryptNumber(aes, plaintext)
+	if err != nil {
+		panic(fmt.Sprint("AES encryption failed: ", err))
+	}
 
 	// Save to a file (os.WriteFile) remember to use the FileName given in the method
+	// MISSING
 
+	//Return public key N E
 	return fmt.Sprint("Modulo N: ", n.String(), "\n Public key E: ", e.String())
 }
 
