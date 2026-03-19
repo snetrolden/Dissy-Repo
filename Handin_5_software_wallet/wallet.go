@@ -67,22 +67,27 @@ func Generate(filename string, password string) string {
 		panic(fmt.Sprint("AES encryption failed: ", err))
 	}
 
-	// Save to a file (os.WriteFile) remember to use the FileName given in the method
-	// MISSING
+	// Combine the hashed thingies
 	saveFile := append(salt, append(iv, ciphertext...)...)
 
+	//Write to disk
 	err = os.WriteFile(filename, saveFile, 0600)
 	//Return public key N E
 	return fmt.Sprint("Modulo N: ", n.String(), "\n Public key E: ", e.String())
 }
 
+// it unlocks a wallet and signs a message
 func Sign(filename string, password string, msg []byte) string {
 	//read the bytes from the file
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		panic("Cant read file")
+		panic(fmt.Sprint("Can't read file: ", err))
 	}
-	//something probably should happen here but i me not know how
+
+	//get the components of the file
+	salt := data[:16] //the salt should be the first 16 bit
+	iv := data[16:32]
+	ciphertext := data[32:] //evyerhitng after the 32 bits
 
 	//unmarshall the sketchy RSA keys
 
