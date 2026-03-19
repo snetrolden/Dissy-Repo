@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 )
 
@@ -89,10 +90,27 @@ func Sign(filename string, password string, msg []byte) string {
 	iv := data[16:32]
 	ciphertext := data[32:] //evyerhitng after the 32 bits
 
+	//revert back
+	aesKey := MasterHasher(password, salt)
+
+	//decrypt the ciphertext using decrypt number
+	plaintext, err := DecryptNumber(aesKey, iv, ciphertext)
+	if err != nil {
+		panic("panic... incorrect password")
+	}
+
 	//unmarshall the sketchy RSA keys
-	aes := MasterHasher(password, salt)
+	var sk SecretKey
+	err = json.Unmarshal(plaintext, sk)
+	if err != nil {
+		panic("unmarshal failed")
+	}
 
-	//hjælp kan ikke finde ud af at push
+	//convert byte to big int
+	d := new(big.Int).SetBytes(sk.D)
+	n := new(big.Int).SetBytes(sk.N)
 
-	return "Signature"
+	Signature := RSASign(msg, d, n)
+
+	return Signature.String()
 }
