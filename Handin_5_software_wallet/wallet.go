@@ -9,7 +9,8 @@ import (
 	"os"
 )
 
-type Signature *big.Int
+// weird typecast to satisfy the exercise function syntax
+type Signature = *big.Int
 
 type SecretKey struct {
 	D []byte
@@ -25,7 +26,7 @@ func MasterHasher(password string, salt []byte) []byte {
 	bs := hash.Sum(nil)
 
 	// repeat hash the password + salt
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 10000000; i++ {
 		hash := sha256.New()
 		hash.Write(bs)
 		bs = hash.Sum(nil)
@@ -75,8 +76,8 @@ func Generate(filename string, password string) string {
 
 	//Write to disk
 	err = os.WriteFile(filename, saveFile, 0600)
-	//Return public key N E
-	return fmt.Sprint("Modulo N: ", n.String(), "\n Public key E: ", e.String())
+	//Return public key N E. lmit N to 10
+	return fmt.Sprint("Modulo N: ", n.String()[:10], "\n Public key E: ", e.String())
 }
 
 // it unlocks a wallet and signs a message
