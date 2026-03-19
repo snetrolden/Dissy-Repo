@@ -9,6 +9,8 @@ import (
 	"os"
 )
 
+type Signature *big.Int
+
 type SecretKey struct {
 	D []byte
 	N []byte
@@ -78,7 +80,7 @@ func Generate(filename string, password string) string {
 }
 
 // it unlocks a wallet and signs a message
-func Sign(filename string, password string, msg []byte) string {
+func Sign(filename string, password string, msg []byte) Signature {
 	//read the bytes from the file
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -101,7 +103,7 @@ func Sign(filename string, password string, msg []byte) string {
 
 	//unmarshall the sketchy RSA keys
 	var sk SecretKey
-	err = json.Unmarshal(plaintext, sk)
+	err = json.Unmarshal(plaintext, &sk) //if something break look here maybe?
 	if err != nil {
 		panic("unmarshal failed")
 	}
@@ -110,7 +112,5 @@ func Sign(filename string, password string, msg []byte) string {
 	d := new(big.Int).SetBytes(sk.D)
 	n := new(big.Int).SetBytes(sk.N)
 
-	Signature := RSASign(msg, d, n)
-
-	return Signature.String()
+	return RSASign(msg, d, n)
 }
