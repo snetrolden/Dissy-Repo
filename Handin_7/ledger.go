@@ -7,19 +7,21 @@ import (
 )
 
 type Ledger struct {
-	Accounts map[string]int //(key)string --> (val)int
+	Accounts map[string]int      // known accounts
+	SeenIDs  map[string]struct{} // Seend transactions
 	lock     sync.Mutex
 }
 
-// A struct to combine the public key (n, e), helps with string encoding
-type Account struct {
+// A struct to combine the public key (n, e), helps with string encoding.
+// Should act as the account ID
+type PublicKey struct {
 	N, E *big.Int
 }
 
 // Transaction hold serialized data
 type SignedTransaction struct {
-	Data      *SerializedTransaction // Separate the serialized data
-	Signature *big.Int               //RSA signature
+	Data      []byte   // This should always be a serialized transaction
+	Signature *big.Int //RSA signature
 }
 
 // Sensitive transaction information (to be serialized)
@@ -41,23 +43,37 @@ func (l *Ledger) Transaction(t *SignedTransaction) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	//add verification
+	//unserialize the data
+	var st SerializedTransaction
+	err := json.Unmarshal(t.Data, &st)
+	if err != nil {
+		return //panic or something
+	}
 
-	//check if txID has been seen before
+	// get public key from data (account identifier)
+	var pk PublicKey
+	json.Unmarshal([]byte(st.FromAccount), &pk)
 
-	//if signature is invalid ignore transaction
+	//Verify signature
+	if !RSAVerify(t.Data, t.Signature, pk.E, pk.N) {
+		return //goofy ah return (ignore transaction)
+	}
 
-	// if txID has already been seen/executed , ignore transaction (replay protection)
+	//
+	if _, seen := l.SeenIDs[st.TxID]; seen {
+		return // ignore transaction
+	}
 
-	l.Accounts[t.Data.FromAccount] -= t.Data.Amount
-	l.Accounts[t.Data.ToAccount] += t.Data.Amount
+	l.SeenIDs[st.TxID] = struct{}{}
+	l.Accounts[st.FromAccount] -= st.Amount
+	l.Accounts[st.ToAccount] += st.Amount
 }
 
 // Helper method that serializes transaction data. A peer should call this function before signing or verifying0
 func (st *SerializedTransaction) Serialization() []byte {
 	data := SerializedTransaction{
 		TxID:        st.TxID,
-		FromAccount: st.ToAccount,
+		FromAccount: st.FromAccount,
 		ToAccount:   st.ToAccount,
 		Amount:      st.Amount,
 	}

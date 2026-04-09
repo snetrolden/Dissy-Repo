@@ -133,7 +133,8 @@ func (p *Peer) OnMessage(msg *Message) {
 		var tx SignedTransaction
 		json.Unmarshal(msg.Payload, &tx)
 
-		p.ledger.Transaction(&tx) // this should handle any verification and duplicate (Peer only handle connections)
+		p.ledger.Transaction(&tx)
+		// fmt.Println("Transaction complete", tx.From, "--->", tx.To, "in the amount:", tx.Amount)
 
 		p.FloodMessage(msg)
 
@@ -280,9 +281,13 @@ func (p *Peer) FloodTransaction(tx *SignedTransaction) {
 		return
 	}
 
+	//bandage fix for ID
+	var st SerializedTransaction
+	json.Unmarshal(tx.Data, &st)
+
 	msg := &Message{
 		Type:    "Transaction",
-		MsgID:   tx.Data.TxID,
+		MsgID:   st.TxID,
 		From:    "127.0.0.1:" + strconv.Itoa(p.port),
 		Payload: payload,
 	}
@@ -293,6 +298,8 @@ func (p *Peer) FloodTransaction(tx *SignedTransaction) {
 	p.lock.Unlock()
 
 	p.ledger.Transaction(tx)
+
+	//Consider adding print statement?
 
 	p.FloodMessage(msg)
 

@@ -107,9 +107,9 @@ func RSAVerify(message []byte, signature, e, n *big.Int) bool {
 	hashInBytes := hash.Sum(nil)
 	expectedHashInt := new(big.Int).SetBytes(hashInBytes)
 
-	// decrypt hash = signature^e mod n
+	// unhash = signature^e mod n, this should produce the original message
 	actualHashInt := new(big.Int).Exp(signature, e, n)
 
-	//Comparez
+	//Compare
 	return expectedHashInt.Cmp(actualHashInt) == 0
 }
