@@ -62,7 +62,6 @@ func (l *Ledger) Transaction(t *SignedTransaction) {
 		return //goofy ah return (ignore)
 	}
 
-	//
 	if _, seen := l.SeenIDs[st.TxID]; seen {
 		fmt.Println("Transaction already seen, ignore.")
 		return // ignore transaction
