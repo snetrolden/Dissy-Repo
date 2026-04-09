@@ -1,22 +1,31 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
-	"strconv"
+	"math/big"
 	"time"
 )
+
+// To keep track of each user and differentiate between the ID and keys for each user.
+type User struct {
+	ID string
+	N  *big.Int
+	E  *big.Int
+	D  *big.Int
+}
 
 //Right now, this is just a copy of the previous main method, so ignore until later!!
 
 func main() {
 
-	n := 10 // Number of Peers
+	nr := 10 // Number of Peers
 
 	fmt.Println("---Starting 10 Peers---")
 	//create and start Peers
 	var peers []*Peer
-	for i := 0; i < n; i++ {
+	for i := 0; i < nr; i++ {
 		p := newPeer(3000 + i)
 		peers = append(peers, p)
 		go p.Start()
@@ -24,7 +33,7 @@ func main() {
 	time.Sleep(1 * time.Second)
 
 	fmt.Println("---Constructing Network of ALL Peers---")
-	for i := 1; i < n; i++ {
+	for i := 1; i < nr; i++ {
 		peers[i].Connect("127.0.0.1", 3000)
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -47,12 +56,27 @@ func main() {
 		fmt.Println("Fully connected network")
 	}
 
-	fmt.Println("---Sending Transactions---")
-	for i := 0; i < 10; i++ {
+	fmt.Println("--- Creating accounts---")
+	//Could have been made with a loop, but that would make it harder to use cool names
+	Grace := createAccounts(2000)
+	Leon := createAccounts(2000)
+	Nathan := createAccounts(2000)
+	Emily := createAccounts(2000)
 
-		go sendTransactions(peers[i]) // go-routines for concurrency
-	}
-	time.Sleep(5 * time.Second)
+	// sending transactions
+	fmt.Println("---Sending Transactions---")
+
+	// Grace sends 500 to Leon
+	go sendValidTransactions(peers[0], Grace, Leon, 500, "tx-1")
+	time.Sleep(2 * time.Second)
+
+	// Nathan sends 1000 to Emily
+	go sendValidTransactions(peers[1], Nathan, Emily, 1000, "tx-2")
+	time.Sleep(2 * time.Second)
+
+	// Leon sends 500 to Grace but Grace hacks the message (Grace is gonna get rich!)
+	go sendInvalidTransactions(peers[2], Leon, Grace, 500, "tx-invalid-1")
+	time.Sleep(2 * time.Second)
 
 	fmt.Println("---Check Ledgers---")
 
@@ -60,6 +84,23 @@ func main() {
 	baseLedger := make(map[string]int)
 	maps.Copy(baseLedger, peers[0].ledger.Accounts)
 	peers[0].ledger.lock.Unlock()
+
+	peers[0].ledger.lock.Lock()
+	fmt.Println("-Value of Ledger-")
+	for ID, balance := range peers[0].ledger.Accounts {
+		name := "Bruh"
+		//Don't look at my shame of else-if statements!
+		if ID == Grace.ID {
+			name = "Grace"
+		} else if ID == Leon.ID {
+			name = "Leon"
+		} else if ID == Nathan.ID {
+			name = "Nathan"
+		} else if ID == Emily.ID {
+			name = "Emily"
+		}
+		fmt.Printf(" - %s: %d\n", name, balance)
+	}
 
 	allIdentical := true
 
@@ -74,24 +115,87 @@ func main() {
 		p.ledger.lock.Unlock()
 	}
 	if allIdentical {
+
 		fmt.Println("All Ledgers match!")
 	}
 
 }
 
-// Sends 10 transaction for a given Peer p
-func sendTransactions(p *Peer) {
-	accounts := []string{"Acc1", "Acc2", "Acc3", "Acc4", "Acc5"}
-
-	for j := 0; j < 10; j++ {
-		tx := &Transaction{
-			ID:     "tx-" + strconv.Itoa(p.port) + "-msg-" + strconv.Itoa(j),
-			From:   accounts[j%5],     // loop via modulo Shoutout to Theo
-			To:     accounts[(j+1)%5], // Always go next
-			Amount: 10,
-		}
-		p.FloodTransaction(tx)
-		time.Sleep(10 * time.Millisecond) //
+// Sends a valid transactions through the network for given peer P
+func sendValidTransactions(p *Peer, sender *User, receiver *User, amount int, txID string) {
+	st := &SerializedTransaction{
+		TxID:        txID,
+		FromAccount: sender.ID,
+		ToAccount:   receiver.ID,
+		Amount:      amount,
 	}
+
+	// Marshal and Sign the transaction
+	data := st.Serialization()
+	sig := RSASign(data, sender.D, sender.N)
+
+	tx := &SignedTransaction{
+		Data:      data,
+		Signature: sig,
+	}
+	fmt.Println("Valid Tx Flooding network")
+	//flood the network
+	p.FloodTransaction(tx)
+}
+
+// sends an invalid transaction
+func sendInvalidTransactions(p *Peer, sender *User, receiver *User, amount int, txID string) {
+
+	//true original transactions
+	st := &SerializedTransaction{
+		TxID:        txID,
+		FromAccount: sender.ID,
+		ToAccount:   receiver.ID,
+		Amount:      amount,
+	}
+	// Marshal and Sign the transaction
+	originalData := st.Serialization()
+	sig := RSASign(originalData, sender.D, sender.N)
+
+	stMalicious := &SerializedTransaction{
+		TxID:        txID,
+		FromAccount: sender.ID,
+		ToAccount:   receiver.ID,
+		Amount:      58008, // Maliciously inflated amount
+	}
+	maliciousData := stMalicious.Serialization()
+
+	// make transaction with malicious data but real signature
+	tx := &SignedTransaction{
+		Data:      maliciousData,
+		Signature: sig,
+	}
+
+	fmt.Println("Invalid Tx Flooding network")
+	//flood the network, should be ignored
+	p.FloodTransaction(tx)
+}
+
+// Helper method for creating keypairs for each account/user, saving the paris in a list
+func createAccounts(k int) *User {
+
+	n, e, d, _ := KeyGen(k)
+
+	//Consider finding a better solution instead of having 2 structs for handling user information
+	pk := &PublicKey{
+		N: n,
+		E: e,
+	}
+
+	id, _ := json.Marshal(pk)
+
+	user := &User{
+		ID: string(id),
+		N:  n,
+		E:  e,
+		D:  d,
+	}
+
+	return user
 
 }

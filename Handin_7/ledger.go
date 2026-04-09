@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"sync"
 )
@@ -35,6 +36,7 @@ type SerializedTransaction struct {
 func MakeLedger() *Ledger {
 	ledger := new(Ledger)
 	ledger.Accounts = make(map[string]int)
+	ledger.SeenIDs = make(map[string]struct{})
 
 	return ledger
 }
@@ -47,7 +49,7 @@ func (l *Ledger) Transaction(t *SignedTransaction) {
 	var st SerializedTransaction
 	err := json.Unmarshal(t.Data, &st)
 	if err != nil {
-		return //panic or something
+		panic(err) //panic or something
 	}
 
 	// get public key from data (account identifier)
@@ -56,11 +58,13 @@ func (l *Ledger) Transaction(t *SignedTransaction) {
 
 	//Verify signature
 	if !RSAVerify(t.Data, t.Signature, pk.E, pk.N) {
-		return //goofy ah return (ignore transaction)
+		fmt.Println("Invalid signature spotted! Eradication protocol initiated.")
+		return //goofy ah return (ignore)
 	}
 
 	//
 	if _, seen := l.SeenIDs[st.TxID]; seen {
+		fmt.Println("Transaction already seen, ignore.")
 		return // ignore transaction
 	}
 
@@ -69,7 +73,7 @@ func (l *Ledger) Transaction(t *SignedTransaction) {
 	l.Accounts[st.ToAccount] += st.Amount
 }
 
-// Helper method that serializes transaction data. A peer should call this function before signing or verifying0
+// Helper method that serializes transaction data. Should be called before signing or verifying0
 func (st *SerializedTransaction) Serialization() []byte {
 	data := SerializedTransaction{
 		TxID:        st.TxID,
